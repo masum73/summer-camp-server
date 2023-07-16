@@ -76,6 +76,10 @@ async function run() {
       const result = await usersCollection.updateOne(filter, updateDoc);
       res.send(result);
     })
+    app.get('/users/instructor', async(req, res) => {
+      const result = await usersCollection.find({role:"instructor"}).toArray();
+      res.send(result);
+    })
     app.patch('/users/instructor/:id', async (req, res) => {
       const id = req.params.id;
       console.log(id);
@@ -96,12 +100,35 @@ async function run() {
       res.send(result);
     })
     app.get('/classes', async (req, res) => {
-      const result = await classCollection.find().toArray();
+      let query = {};
+      console.log(req.query);
+      if (req.query.status) {
+        query.status = req.query.status;
+      }
+      const result = await classCollection.aggregate([
+        {
+          $lookup: {
+            from: "users",
+            localField: "instructor",
+            foreignField: "_id",
+            as: "instructor"
+          }
+        },
+        {
+          $unwind: "$instructor",
+        },
+        {
+          $match: {
+            ...query
+          }
+        }
+      ]).toArray();
+      console.log(result);
       res.send(result);
     });
     app.get('/classes/:id', async (req, res) => {
       const id = req.params.id;
-      const query = {_id: new ObjectId(id)}
+      const query = { _id: new ObjectId(id) }
       const result = await classCollection.findOne(query);
       res.send(result);
     });
