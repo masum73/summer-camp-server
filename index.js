@@ -29,6 +29,7 @@ async function run() {
     // collection build
     const usersCollection = client.db('musicDB').collection('users');
     const classCollection = client.db('musicDB').collection('class');
+    const classStudentCollection = client.db('musicDB').collection('class_student');
 
     app.post('/jwt', (req, res) => {
       const user = req.body;
@@ -43,12 +44,7 @@ async function run() {
       res.send(result);
     });
 
-    app.get('/users/:email', async (req, res) => {
-      const email = req.params.email;
-
-      const result = await usersCollection.findOne({ email: email });
-      res.send({ data: result });
-    });
+    
 
     app.post('/users', async (req, res) => {
       const user = req.body;
@@ -78,8 +74,17 @@ async function run() {
     })
     app.get('/users/instructor', async(req, res) => {
       const result = await usersCollection.find({role:"instructor"}).toArray();
+      console.log(result)
       res.send(result);
     })
+
+    app.get('/users/:email', async (req, res) => {
+      const email = req.params.email;
+
+      const result = await usersCollection.findOne({ email: email });
+      res.send({ data: result });
+    });
+
     app.patch('/users/instructor/:id', async (req, res) => {
       const id = req.params.id;
       console.log(id);
@@ -145,6 +150,73 @@ async function run() {
       res.send(result);
     })
 
+    // student class related API
+    app.post('/student/class', async (req, res) => {
+      const payload = req.body;
+      const query = { classId: payload.classId , studentId: payload.studentId }
+      const existingClass = await classStudentCollection.findOne(query);
+
+      if (existingClass) {
+        return res.send({ message: 'Class selected already' })
+      }
+
+      const result = await classStudentCollection.insertOne({ ...payload, classId: new ObjectId(payload.classId), studentId: new ObjectId(payload.studentId)});
+      res.send(result);
+    });
+
+    app.get('/selectedclass', async (req, res) => {
+      let query = {};
+      console.log(req.query);
+      if (req.query.classId) {
+        query.classId = new ObjectId( req.query.classId);
+      }
+      if (req.query.studentId) {
+        query.studentId =  new ObjectId(req.query.studentId);
+      }
+      const result = await classStudentCollection.aggregate([
+        {
+          $lookup: {
+            from: "users",
+            localField: "studentId",
+            foreignField: "_id",
+            as: "student"
+          }
+        },
+        {
+          $lookup: {
+            from: "class",
+            localField: "classId",
+            foreignField: "_id",
+            as: "class"
+          }
+        },
+        
+        {
+          $unwind: "$student",
+        },
+        {
+          $unwind: "$class",
+        },
+        {
+          $lookup: {
+            from: "user",
+            localField: "class.instructor",
+            foreignField: "_id",
+            as: "instructor"
+          }
+        },
+        // {
+        //   $unwind: "$instructor",
+        // },
+        {
+          $match: {
+            ...query
+          }
+        }
+      ]).toArray();
+      console.log(result);
+      res.send(result);
+    });
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
