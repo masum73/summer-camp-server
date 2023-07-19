@@ -166,7 +166,7 @@ async function run() {
 
     app.get('/selectedclass', async (req, res) => {
       let query = {};
-      console.log(req.query);
+      // console.log(req.query);
       if (req.query.classId) {
         query.classId = new ObjectId( req.query.classId);
       }
@@ -183,6 +183,9 @@ async function run() {
           }
         },
         {
+          $unwind: "$student",
+        },
+        {
           $lookup: {
             from: "class",
             localField: "classId",
@@ -190,31 +193,27 @@ async function run() {
             as: "class"
           }
         },
-        
-        {
-          $unwind: "$student",
-        },
         {
           $unwind: "$class",
         },
         {
           $lookup: {
-            from: "user",
+            from: "users",
             localField: "class.instructor",
             foreignField: "_id",
             as: "instructor"
           }
         },
-        // {
-        //   $unwind: "$instructor",
-        // },
+        {
+          $unwind: "$instructor",
+        },
         {
           $match: {
             ...query
           }
         }
       ]).toArray();
-      console.log(result);
+      // console.log(result);
       res.send(result);
     });
 
