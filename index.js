@@ -3,6 +3,7 @@ const app = express();
 const cors = require('cors')
 const jwt = require('jsonwebtoken');
 require('dotenv').config();
+const stripe = require('stripe')(process.env.PAYMENT_SECRET_KEY);
 const port = process.env.PORT || 5000;
 
 // middleware 
@@ -173,6 +174,9 @@ async function run() {
       if (req.query.studentId) {
         query.studentId =  new ObjectId(req.query.studentId);
       }
+      if (req.query.status) {
+        query.status = req.query.status;
+      }
       const result = await classStudentCollection.aggregate([
         {
           $lookup: {
@@ -217,12 +221,94 @@ async function run() {
       res.send(result);
     });
 
+    app.get('/selectedclass/:id', async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+
+      const result = await classStudentCollection.aggregate([
+        {
+          $lookup: {
+            from: "users",
+            localField: "studentId",
+            foreignField: "_id",
+            as: "student"
+          }
+        },
+        {
+          $unwind: "$student",
+        },
+        {
+          $lookup: {
+            from: "class",
+            localField: "classId",
+            foreignField: "_id",
+            as: "class"
+          }
+        },
+        {
+          $unwind: "$class",
+        },
+        {
+          $lookup: {
+            from: "users",
+            localField: "class.instructor",
+            foreignField: "_id",
+            as: "instructor"
+          }
+        },
+        {
+          $unwind: "$instructor",
+        },
+        {
+          $match: {
+            ...query
+          }
+        }
+      ]).toArray();
+      // console.log(result);
+      res.send(result[0]);
+    });
+
     app.delete('/selectedclass/:id', async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
       const result = await classStudentCollection.deleteOne(query);
       res.send(result);
     })
+
+    // create payment intent
+    app.post('/create-payment-intent', async (req, res) => {
+      const { price } = req.body;
+      const amount = parseInt(price * 100);
+      const paymentIntent = await stripe.paymentIntents.create({
+        amount: amount,
+        currency: 'usd',
+        payment_method_types: ['card']
+      });
+
+      res.send({
+        clientSecret: paymentIntent.client_secret
+      })
+    })
+
+    // payment related api
+    app.patch('/payments/:studentClassId', async (req, res) => {
+      // console.log("hello");
+      const id = req.params.studentClassId;
+      const payment = req.body;
+      const query = {_id: new ObjectId(id)}
+      const updateData = {status: "paid", amount: payment.price, paymentDate: new Date(), transactionId: payment.transactionId}
+      const data = await classStudentCollection.findOne(query);
+      const classData = await classCollection.findOne({_id: data.classId})
+      if(classData.availableSeats === 0) {
+        res.send({error: "No seats available"})
+      }
+      await classCollection.updateOne({_id: classData._id}, {$set: {availableSeats: classData.availableSeats - 1, enrolledStudents: classData.enrolledStudents + 1}})
+      const result = classStudentCollection.updateOne(query, {$set: {...data,...updateData}} );
+      res.send(result);
+    })
+
+
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
