@@ -111,6 +111,9 @@ async function run() {
       if (req.query.status) {
         query.status = req.query.status;
       }
+     
+        
+      
       const result = await classCollection.aggregate([
         {
           $lookup: {
@@ -126,6 +129,11 @@ async function run() {
         {
           $match: {
             ...query
+          }
+        },
+        {
+          $sort: {
+            enrolledStudents: -1
           }
         }
       ]).toArray();
